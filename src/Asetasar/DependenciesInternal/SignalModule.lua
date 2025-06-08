@@ -1,180 +1,190 @@
-local BITSIZE_USED = {"writeu8", "readu8"}
-
 local signalHandler = {
-    CallbackFunctionArray = {},
-    AvailableIndexes = {},
+    CallbackFunctionLookup = {},
+    SignalToCleanUp = {},
+    GC_RUNNING = false,
+
     ["#OneTimeLoad"] = true,
     ["#Index"] = "Signals"
+}
+
+local typeToNumber = {
+    Connect = 0,
+    Once = 1,
+    DisconnectAfterOnce = 2
 }
 
 local signalHandlerHolder = {}
 signalHandlerHolder.__INDEX = signalHandlerHolder
 
-local bufferWrapper = {}
-local assertWrapper = {}
+local GC_TIME = 12
 
-function assertWrapper:Function(_function)
-    local varTypeOf = typeof(_function)
+local assertWrapper = {
+    Function = function(_function)
+        local varTypeOf = typeof(_function)
 
-    if varTypeOf ~= "function" then
-        error(`Function expected, got {varTypeOf}`)
+        if varTypeOf ~= "function" then
+            error(`Function expected, got {varTypeOf}`)
 
-        return true
+            return true
+        end
+
+        return false
+    end,
+    Number = function(number)
+        local varTypeOf = typeof(number)
+
+        if varTypeOf ~= "number" then
+            error(`Number expected, got {varTypeOf}`)
+
+            return true
+        end
+
+        return false
+    end
+}
+
+local function sanitizePriority(priority)
+    if priority and not assertWrapper.Number(priority) then
+        return priority
     end
 
     return false
 end
 
-function assertWrapper:Number(number)
-    local varTypeOf = typeof(number)
+local function generateReturnDictForConnection(signal, callbackFunction)
+    local callbackFunctionLookup = signalHandler.CallbackFunctionLookup
+    local connectionsArray = signal._Connections
 
-    if varTypeOf ~= "number" then
-        error(`Number expected, got {varTypeOf}`)
+    return {
+        Disconnect = function()
+            local callbackFunctionIndex = table.find(connectionsArray, callbackFunction)
 
-        return true
+            if not callbackFunction then
+                error("Signal no longer exists.")
+            end
+
+            signalHandler:MarkForCleanup(signal, callbackFunction, callbackFunctionIndex)
+        end,
+        ChangeConnectionType = function(_, signalType)
+            local numberFromType = typeToNumber[signalType]
+
+            if not numberFromType then
+                error(`Invalid connection type {signalType}`)
+            end
+
+            if callbackFunctionLookup[callbackFunction] == -1 then
+                error("Signal no longer exists")
+            end
+
+            callbackFunctionLookup[callbackFunction] = numberFromType
+        end,
+        Wait = function()
+            return signal:Wait()
+        end
+    }
+end
+
+local function sanitizePassArgs(callbackFunction, priority)
+    assertWrapper.Function(callbackFunction)
+    return sanitizePriority(priority)
+end
+
+function signalHandler:MarkForCleanup(signal, callbackFunction, index)
+    local indexedSignalArray =  signalHandler.SignalToCleanUp[signal]
+
+    if not indexedSignalArray then
+        signalHandler.SignalToCleanUp[signal] = {}
+        indexedSignalArray = signalHandler.SignalToCleanUp[signal]
     end
 
-    return false
+    table.insert(indexedSignalArray, index)
+    self.CallbackFunctionLookup[callbackFunction] = -1
 end
 
-function bufferWrapper:Write(_buffer, value)
-    buffer[BITSIZE_USED[1]](_buffer, 0, value)
-end
+function signalHandlerHolder:AssignNewConnection(callbackFunction, typeofNumber, priority)
+    self._CallbackFunctionLookup[callbackFunction] = typeofNumber
 
-function bufferWrapper:Read(_buffer)
-    return buffer[BITSIZE_USED[2]](_buffer, 0)
-end
-
-function bufferWrapper:WriteSecondary(_buffer, value)
-    buffer.writeu8(_buffer, 1, value)
-end
-
-function bufferWrapper:ReadSecondary(_buffer)
-    return buffer.readu8(_buffer, 1)
-end
-
-function bufferWrapper:CreatePointer(value, signalState)
-    local _buffer = buffer.create(2)
-
-    self:Write(_buffer, value)
-    self:WriteSecondary(_buffer, signalState)
-
-    return _buffer
-end
-
-function bufferWrapper:ReadPointer(_buffer)
-    local firstValue = self:Read(_buffer)
-    local secondValue = self:ReadSecondary(_buffer)
-
-    return firstValue, secondValue
-end
-
-local function assignIndexToCallbackFunction(callbackFunction)
-    local callbackFunctionArray = signalHandler.CallbackFunctionArray
-    local availibleIndexes = signalHandler.AvailableIndexes
-    local availableIndexesAmount = #availibleIndexes
-
-    if availableIndexesAmount == 0 then
-        table.insert(callbackFunctionArray, callbackFunction)
-
-        return #callbackFunctionArray
+    if priority then
+        table.insert(self._Connections, priority, callbackFunction)
+    else
+        table.insert(self._Connections, callbackFunction)
     end
-
-    local availibleIndex = availibleIndexes[availableIndexesAmount]
-    callbackFunctionArray[availibleIndex] = callbackFunctionArray
-
-    table.remove(availibleIndexes, availableIndexesAmount)
-
-    return availibleIndex
 end
 
 function signalHandlerHolder:Connect(callbackFunction, priority)
-    if assertWrapper:Function(callbackFunction) then
-        return
-    end
+    priority = sanitizePassArgs(callbackFunction, priority)
 
-    if priority and assertWrapper:Number(priority) then
-        return
-    else
-        priority = #self.PointerArray + 1
-    end
+    self:AssignNewConnection(callbackFunction, typeToNumber["Connect"], priority)
 
-    local assignedIndex = assignIndexToCallbackFunction(callbackFunction)
-    local pointerBuffer = bufferWrapper:CreatePointer(assignedIndex, 0)
-
-    table.insert(self.PointerArray, priority, pointerBuffer)
-
-    return {
-        Disconnect = function()
-            bufferWrapper:WriteSecondary(pointerBuffer, 2)
-        end,
-        DisconnectAfterSignal = function()
-            bufferWrapper:WriteSecondary(pointerBuffer, 1)
-        end
-    }
+    return generateReturnDictForConnection(self, callbackFunction)
 end
 
 function signalHandlerHolder:Once(callbackFunction, priority)
-    if assertWrapper:Function(callbackFunction) then
-        return
-    end
+    priority = sanitizePassArgs(callbackFunction, priority)
 
-    if priority and assertWrapper:Number(priority) then
-        return
-    else
-        priority = #self.PointerArray + 1
-    end
+    self:AssignNewConnection(callbackFunction, typeToNumber["Once"], priority)
 
-    local assignedIndex = assignIndexToCallbackFunction(callbackFunction)
-    local pointerBuffer = bufferWrapper:CreatePointer(assignedIndex, 1)
+    return generateReturnDictForConnection(self, callbackFunction)
+end
 
-    table.insert(self.PointerArray, priority, pointerBuffer)
+function signalHandlerHolder:Wait()
+    local thread = coroutine.running()
 
-    return {
-        Disconnect = function()
-            bufferWrapper:WriteSecondary(pointerBuffer, 2)
-        end
-    }
+    self:Once(function()
+        coroutine.resume(thread)
+    end)
+
+    return coroutine.yield()
 end
 
 function signalHandlerHolder:Fire(...)
-    for index, pointerBuffer in self.PointerArray do
-        local pointerIndex, signalState = bufferWrapper:ReadPointer(pointerBuffer)
+    for index, callbackFunction in self._Connections do
+        local typeofConnection = self._CallbackFunctionLookup[callbackFunction]
 
-        if signalState == 2 then
-            --// Disconnect state
-            self.GlobalCallbackFunctionArray[pointerIndex] = 0
-            table.insert(self.GlobalAvailableIndexes, pointerIndex)
-            table.remove(self.PointerArray, index)
+        print(typeofConnection)
 
+        if not typeofConnection or typeofConnection == -1 then
             continue
         end
 
-        self.GlobalCallbackFunctionArray[pointerIndex](...)
+        callbackFunction(...)
 
-        if signalState == 1 then
-            --// Once state
-            self.GlobalCallbackFunctionArray[pointerIndex] = 0
-            table.insert(self.GlobalAvailableIndexes, pointerIndex)
-            table.remove(self.PointerArray, index)
+        if typeofConnection == 1 or typeofConnection == 2 then
+            signalHandler:MarkForCleanup(self, callbackFunction, index)
         end
     end
 end
 
---[[
-function signalHolder:Wait(callbackFunction)
+function signalHandler:CleanupRequest()
+    for signal, desiredConnections in self.SignalToCleanUp do
+        local signalConnections = signal._Connections
 
+        for index = #desiredConnections, -1 do
+            table.remove(signalConnections, index)
+        end
+
+        self.SignalToCleanUp[signal] = nil
+    end
 end
-]]
+
+function signalHandler:InitializeGC()
+    self.GC_RUNNING = true
+
+    while task.wait(GC_TIME) do
+        self:CleanupRequest()
+    end
+end
 
 function signalHandler.New()
     local _signalHolder = signalHandlerHolder
-    local pointerArray = {}
 
     setmetatable(_signalHolder, signalHandlerHolder)
-    _signalHolder.PointerArray = pointerArray
-    _signalHolder.GlobalCallbackFunctionArray = signalHandler.CallbackFunctionArray
-    _signalHolder.GlobalAvailableIndexes = signalHandler.AvailableIndexes
+    _signalHolder._Connections = {}
+    _signalHolder._CallbackFunctionLookup = signalHandler.CallbackFunctionLookup
+
+    if not signalHandler.GC_RUNNING then
+        task.spawn(signalHandler.InitializeGC, signalHandler)
+    end
 
     return _signalHolder
 end
