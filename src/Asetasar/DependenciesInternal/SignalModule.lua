@@ -14,7 +14,7 @@ local typeToNumber = {
 }
 
 local signalHandlerHolder = {}
-signalHandlerHolder.__INDEX = signalHandlerHolder
+signalHandlerHolder.__index = signalHandlerHolder
 
 local GC_TIME = 12
 
@@ -176,9 +176,7 @@ function signalHandler:InitializeGC()
 end
 
 function signalHandler.New()
-    local _signalHolder = signalHandlerHolder
-
-    setmetatable(_signalHolder, signalHandlerHolder)
+    local _signalHolder = setmetatable({}, signalHandlerHolder)
     _signalHolder._Connections = {}
     _signalHolder._CallbackFunctionLookup = signalHandler.CallbackFunctionLookup
 
