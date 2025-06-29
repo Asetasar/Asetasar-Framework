@@ -1,7 +1,7 @@
 local exampleSingleton = {
     _AsetaHeader = {
         ["#Index"] = "Module2",
-        ["#Dependencies"] = {"Logger", "Signals"},
+        ["#Dependencies"] = {"Logger", "Signals", "Remotes"},
         ["#IgnoreDependencyErrors"] = true,
         ["#LoadOrder"] = 1
     }

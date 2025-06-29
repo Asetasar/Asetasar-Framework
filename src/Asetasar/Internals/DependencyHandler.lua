@@ -2,6 +2,45 @@ local dependencyHandler = {
     Dependencies = {}
 }
 
+function dependencyHandler:IndexDependency(fetchedDependencies, dependency, loadedDependency)
+    local dependencyIndex = loadedDependency["#Index"]
+
+    if not loadedDependency["#OneTimeLoad"] then
+        fetchedDependencies[dependencyIndex] = {
+                dependency,
+                loadedDependency
+            }
+    else
+        fetchedDependencies[dependencyIndex] = loadedDependency
+    end
+
+    loadedDependency["#OneTimeLoad"] = nil
+    loadedDependency["#Index"] = nil
+end
+
+function dependencyHandler:LoadInternalDependenicesForDependencies(loadedDependency, passThroughDict)
+    local internalDependenciesRequested = loadedDependency["#InternalDependencies"]
+
+    if not internalDependenciesRequested then
+        return
+    end
+
+    local success, errorMessages = self:LoadDependenciesByArray(internalDependenciesRequested, passThroughDict)
+
+    if success then
+        loadedDependency["#InternalDependencies"] = nil
+
+        return
+    end
+
+    local errorMessageIndex = (#errorMessages == 1) and "FAILED_LOAD_ONE_DEPENDENCY" or
+        "FAILED_LOAD_MULTIPLE_DEPENDENCIES"
+
+    self:Log(3, errorMessageIndex, table.concat(errorMessages, "\n"))
+
+    return false
+end
+
 function dependencyHandler:FetchDependencies(dependencyFolder)
     local fetchedDependencies = {}
 
@@ -14,18 +53,14 @@ function dependencyHandler:FetchDependencies(dependencyFolder)
             continue
         end
 
-        local dependencyIndex = loadedDependency["#Index"]
-        if not loadedDependency["#OneTimeLoad"] then
-                fetchedDependencies[dependencyIndex] = {
-                    dependency,
-                    loadedDependency
-                }
-        else
-            fetchedDependencies[dependencyIndex] = loadedDependency
-        end
+        local passThroughDict = {}
 
-        loadedDependency["#OneTimeLoad"] = nil
-        loadedDependency["#Index"] = nil
+        self:LoadInternalDependenicesForDependencies(loadedDependency, passThroughDict)
+        self:IndexDependency(fetchedDependencies, dependency, loadedDependency)
+
+        if loadedDependency.AsetaLoad then
+            loadedDependency:AsetaLoad(passThroughDict)
+        end
     end
 
     return fetchedDependencies
@@ -45,12 +80,14 @@ function dependencyHandler:FetchLoadDependencies()
     local dependencies = self.Script:WaitForChild("Dependencies")
     dependencies = self:FetchDependencies(dependencies)
 
-    table.move(dependencies, 1, #dependencies, #self.Dependencies, self.Dependencies)
+    for index, value in pairs(dependencies) do
+        self.Dependencies[index] = value
+    end
 
     self:Log(2, false, dependencyCounter:Stop())
 
-    internalDependencies = self.Script:WaitForChild("DependenciesInternal")
-    dependencies = self.Script:WaitForChild("Dependencies")
+    internalDependencies = self.Script.DependenciesInternal
+    dependencies = self.Script.Dependencies
 
     if self["DELETE_DEPENDENCIES_FOLDER"] then
         table.insert(self.DELETE_UPON_CLEANUP_ARRAY, internalDependencies)
@@ -97,7 +134,6 @@ function dependencyHandler:GetDependency(dependencyIndex)
     end
 
     --// Assumptions made, keeping it simple, because there is no need to verify stuff like this.
-    --// Only argument I could see would be exploiter inputting false
 end
 
 function dependencyHandler:LoadDependenciesByArray(dependencyIndexArray, indexToDict)
