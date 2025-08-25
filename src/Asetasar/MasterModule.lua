@@ -1,26 +1,13 @@
 local masterModule = {
-    DELETE_INTERNALS_FOLDER = false,
-    DELETE_DEPENDENCIES_FOLDER = false,
-    DELETE_SINGLETON_FOLDER = false,
-    CLEANUP_INTERNALS = true,
-    DELETE_UPON_CLEANUP_ARRAY = {}
+    CleanupInstanceArray = {}
 }
 
---// Future-proof if other languages are desired for example
-
-function masterModule:GeneratePassDictionary()
-    self.PassDict = {
-        RunService = game:GetService("RunService"),
-        Players = game:GetService("Players"),
-        LocalPlayer = game:GetService("Players").LocalPlayer,
+function masterModule:GetDefaultPassDict()
+    return {
         Aseta = self,
         Singletons = self.Singletons,
         IsMaster = false
     }
-end
-
-function masterModule:GetDefaultPassDict()
-    return table.clone(self.PassDict)
 end
 
 function masterModule:_Require(moduleScript)
@@ -29,27 +16,156 @@ function masterModule:_Require(moduleScript)
     end)
 end
 
-function masterModule:LoadInternals()
-    local internalsFolder = script:WaitForChild("Internals")
+function masterModule:GetStringFromStringList(stringIndex)
+    return self.StringList[stringIndex]
+end
 
-    for _, module in internalsFolder:GetChildren() do
-        local success, loadedModule = self:_Require(module)
+function masterModule:FormatByStringList(messageType, ...)
+    local stringArray, isEmpty = self._log:SanitizeArrayToString({...})
 
-        if not success then
-           error(`Failed to load internal [{module}].`)
-        end
+    if isEmpty then
+        return self.StringList[messageType]
+    else
+        return string.format(self.StringList[messageType], table.unpack(stringArray))
+    end
+end
 
-        for index, value in loadedModule do
-            self[index] = value
-        end
+function masterModule:Log(logType, messageType, ...)
+    if not self._log then
+        --// Will work because always 1 concated string will be passed
+        local errorMessage = {...}
+        errorMessage = errorMessage[1]
 
-        --// Just to be sure, not sure about this one
-        table.clear(loadedModule)
-        loadedModule = nil
+        print(`[Asetasar master]: {messageType} {...}`)
     end
 
-    if self["DELETE_INTERNALS_FOLDER"] then
-        table.insert(self.DELETE_UPON_CLEANUP_ARRAY, internalsFolder)
+    if not messageType then
+        self._log:Log(logType, "[Asetasar master]:", ...)
+    else
+        self._log:Log(logType, "[Asetasar master]:", self:FormatByStringList(messageType, ...))
+    end
+end
+
+function masterModule:IndexAndLoadInternalStructure()
+    local internalFolder = script:WaitForChild("Internal")
+
+    self._Internal = {}
+
+    for _, module in internalFolder:GetDescendants() do
+        if not module:IsA("ModuleScript") then
+            continue
+        end
+
+        local moduleKey = module.Parent.Name
+
+        if self._Internal[moduleKey] then
+            self._Internal[moduleKey][module.Name] = module
+        else
+            self._Internal[moduleKey] = {[module.Name] = module}
+        end
+    end
+end
+
+function masterModule:GetLoadMap()
+    local success, loadMap = self:_Require(script:FindFirstChild("LoadMap"))
+
+    if not success then
+        self:Log(3, "FAILED_LOADMAP_LOAD", loadMap)
+    end
+
+    return loadMap
+end
+
+function masterModule:LoadDataStorage()
+    local success, dataStorageHandler = self:_Require(self._Internal.Modules.DataStorageHandler)
+
+    if not success then
+        --// Cant use stringList
+        self:Log(3, `DataStorageHandler failed to load! Error: {dataStorageHandler}`)
+    end
+
+    dataStorageHandler:FetchLoadDataSources({
+        Script = script,
+        _Internal = self._Internal,
+        FormatByStringList = self.FormatByStringList
+    })
+
+    for key, value in dataStorageHandler:GetInternals() do
+        self[key] = value
+    end
+end
+
+function masterModule:LoadDependencies()
+    local success, dependencyHandler = self:_Require(self._Internal.Modules.DependencyHandler)
+
+    if not success then
+        self:Log(3, "FAILED_LOAD_DEPENDENCY_HANDLER", dependencyHandler)
+    end
+
+    dependencyHandler:FetchLoadDependencies({
+        Script = script,
+        _Internal = self._Internal,
+        FormatByStringList = self.FormatByStringList,
+        GetStringFromStringList = self.GetStringFromStringList,
+        StringList = self.StringList,
+        Config = self.Config,
+        Log = self.Log
+    })
+
+    for key, value in dependencyHandler:GetInternals() do
+        self[key] = value
+    end
+end
+
+function masterModule:LoadSharedFuncsHandler()
+    local success, sharedFuncsHandler = self:_Require(self._Internal.Modules.SharedFunctionsHandler)
+
+    if not success then
+        self:Log(3, "FAILED_LOAD_SHAREDFUNC_HANDLER", sharedFuncsHandler)
+    end
+
+    sharedFuncsHandler:Load({
+        _log = self._log,
+        Log = self.Log,
+        StringList = self.StringList,
+        FormatByStringList = self.FormatByStringList,
+        GetStringFromStringList = self.GetStringFromStringList
+    })
+
+    for key, value in sharedFuncsHandler:GetInternals() do
+        self[key] = value
+    end
+
+    self.SharedFuncsHandler = sharedFuncsHandler
+
+    self:Log(1, "LOADED_SHARED_FUNC_HANDLER")
+end
+
+function masterModule:LoadSingletons()
+    local success, singletonHandler = self:_Require(self._Internal.Modules.SingletonHandler)
+
+    if not success then
+        self:Log(3, "FAILED_LOAD_SINGLETON_HANDLER", singletonHandler)
+    end
+
+    singletonHandler:LoadSingletons({
+        PassthroughDict = self:GetDefaultPassDict(),
+        Script = script,
+        Counter = self.Counter,
+        Log = self.Log,
+        _log = self._log,
+        StringList = self.StringList,
+        Config = self.Config,
+        Singletons = self.Singletons,
+        FormatByStringList = self.FormatByStringList,
+        DependencyHandler = self.DependencyHandler,
+        DataStoreHandler = self.DataStorageHandler,
+        SharedFuncsHandler = self.SharedFuncsHandler,
+        Loadmap = self:GetLoadMap()
+    })
+
+    for key, value in singletonHandler:GetInternals() do
+        self[key] = value
     end
 end
 
@@ -57,52 +173,63 @@ function masterModule:CleanUpInternalsMaster()
     local loadTime = self.Counter:Start(self:GetStringFromStringList("MASTER_CLEANUP"))
     self:Log(1, "MASTER_CLEANUP_INITIAL")
 
-    for _, instance in self.DELETE_UPON_CLEANUP_ARRAY do
+    if self.Config.RemoveFolder["Internal"] then
+        table.insert(self.CleanupInstanceArray, script.Internal)
+    end
+
+    if self.Config.CleanupMaster then
+        self.DataStoreHandler = nil
+        self.DependencyHandler = nil
+        self.SharedFuncsHandler = nil
+
+        --self.FormatByStringList = nil
+        --self.StringList = nil
+        --self.Log = nil
+        --self._log = nil
+        --self.GetStringFromStringList = nil
+
+        self.Counter = nil
+        self.GetDefaultPassDict = nil
+        self.GetLoadMap = nil
+        self.IndexAndLoadInternalStructure = nil
+        self.Load = nil
+        self.LoadDataStorage = nil
+        self.LoadDependencies = nil
+        self.LoadSharedFuncsHandler = nil
+        self.LoadSingletons = nil
+        self._Internal = nil
+        self._Require = nil
+        self.CleanUpInternalsMaster = nil
+    end
+
+    for _, instance in self.CleanupInstanceArray do
         instance:Destroy()
     end
-    self.DELETE_UPON_CLEANUP_ARRAY = nil
+    self.CleanupInstanceArray = nil
+
+    self.Config = nil
+
     self:Log(1, "QUEUE_ARRAY_CLEANUP")
-
-    if self["CLEANUP_INTERNALS"] then
-        self["DELETE_INTERNALS_FOLDER"] = nil
-        self["DELETE_DEPENDENCIES_FOLDER"] = nil
-        self["DELETE_SINGLETON_FOLDER"] = nil
-
-        self.FetchDependencies = nil
-        self.FetchLoadDependencies = nil
-        self.LoadSingletons = nil
-
-        self.CleanUpInternalsSingleton = nil
-        self.CleanUpInternalsMaster = nil
-
-        self.TotalSingletonLoadInitTime = nil
-
-        self.LoadAndSortSingletons = nil
-        self.LoadDependenciesByArray = nil
-
-        self.LoadInternals = nil
-        self.Load = nil
-
-        self["CLEANUP_INTERNALS"] = nil
-    end
-
     self:Log(1, false, loadTime:Stop())
 end
 
 function masterModule:Load()
-    warn("[Asetasar master] Initializing...")
+    print("[Asetasar master] Initializing...")
     local loadTime = os.clock()
 
     self.IsMaster = true
     self.Script = script
 
-    self:LoadInternals()
-    self:FetchLoadDependencies()
+    self:IndexAndLoadInternalStructure()
 
-    self:GeneratePassDictionary()
+    self:LoadDataStorage()
+    self:LoadDependencies()
+    self:LoadSharedFuncsHandler()
     self:LoadSingletons()
 
     self:CleanUpInternalsMaster()
+
+    print(self)
 
     self:Log(2, "MASTER_INITIALIZED", (os.clock() - loadTime))
 end

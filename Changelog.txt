@@ -1,0 +1,10 @@
+VERSION 0.9 - Initial steps
+
+- Changed internal structure into scalable one
+- Added data source manager (data which can be shared simply by existing.)
+- Added configuration module (check it out!)
+- Added function sharing (see example header for example)
+- Removed passthrough table junk and retained most important keys.
+
+TODO: Proper runtime seperation for client and server
+TODO: Shared Dependencies

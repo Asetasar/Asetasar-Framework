@@ -8,21 +8,23 @@
           "$path": "src/StarterPlayerScripts",
           "AsetasarFramework": {
             "$path": "src/Asetasar/AsetasarFramework.client.lua",
-  
             "MasterModule": {
               "$path": "src/Asetasar/MasterModule.lua",
 
-              "Internals": {
-                "$path": "src/Asetasar/Internals"
+              "Internal": {
+                "$path": "src/Asetasar/Internal"
               },
               "Dependencies": {
                 "$path": "src/Asetasar/Dependencies"
               },
-              "DependenciesInternal": {
-                "$path": "src/Asetasar/DependenciesInternal"
-              },
               "Singletons": {
                 "$path": "src/Asetasar/Singletons"
+              },
+              "Data": {
+                "$path": "src/Asetasar/Data"
+              },
+              "LoadMap": {
+                "$path": "src/Asetasar/LoadMap.lua"
               }
             }
           }
