@@ -175,7 +175,7 @@ end
 
 function singletonHandler:GetInternals()
     return {
-        GetSingleton = function(singletonIndex)
+        GetSingleton = function(_, singletonIndex)
             return singletonHandler:GetSingleton(singletonIndex)
         end
     }
