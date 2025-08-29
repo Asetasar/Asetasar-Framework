@@ -134,7 +134,9 @@ function dependencyHandler:FetchLoadDependencies(sharedKeys)
     self:Log(2, false, dependencyCounter:Stop())
 
     if self.Config["TransferInternalDependenciesForUserUse"] then
-        for _, module in internalDependencies do
+        internalDependencies = self.Script.Internal.Dependencies
+
+        for _, module in internalDependencies:GetChildren() do
             module.Parent = dependencies
         end
     end

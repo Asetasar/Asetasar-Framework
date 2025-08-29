@@ -84,15 +84,15 @@ function masterModule:LoadDataStorage()
         self:Log(3, `DataStorageHandler failed to load! Error: {dataStorageHandler}`)
     end
 
+    for key, value in dataStorageHandler:GetInternals() do
+        self[key] = value
+    end
+
     dataStorageHandler:FetchLoadDataSources({
         Script = script,
         _Internal = self._Internal,
         FormatByStringList = self.FormatByStringList
     })
-
-    for key, value in dataStorageHandler:GetInternals() do
-        self[key] = value
-    end
 end
 
 function masterModule:LoadDependencies()

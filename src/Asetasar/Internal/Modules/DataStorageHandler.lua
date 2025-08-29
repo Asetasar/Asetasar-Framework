@@ -73,8 +73,7 @@ function dataStorageHandler:FetchLoadDataSources(sharedKeys)
     end
 
     local dataSources = self.Script:WaitForChild("Data")
-    local internalDataSources = self._Internal.Data
-    internalDataSources = dataStorageHandler:FetchDataSources(internalDataSources)
+    local internalDataSources = dataStorageHandler:FetchDataSources(self._Internal.Data)
 
     self.StringList = internalDataSources.StringList
     self.Config = internalDataSources.Configuration
@@ -90,7 +89,9 @@ function dataStorageHandler:FetchLoadDataSources(sharedKeys)
     end
 
     if self.Config["TransferInternalDataForUserUse"] then
-        for _, module in internalDataSources do
+        internalDataSources = self.Script.Internal.Data
+
+        for _, module in internalDataSources:GetChildren() do
             module.Parent = dataSources
         end
     end
