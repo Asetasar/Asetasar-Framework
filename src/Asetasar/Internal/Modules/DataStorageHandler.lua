@@ -61,7 +61,7 @@ end
 function dataStorageHandler:GetInternals()
     return {
         Data = self.Data,
-        DataStoreHandler = self,
+        DataStorageHandler = self,
         Config = self.Config,
         StringList = self.StringList
     }
