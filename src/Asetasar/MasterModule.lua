@@ -148,6 +148,10 @@ function masterModule:LoadSingletons()
         self:Log(3, "FAILED_LOAD_SINGLETON_HANDLER", singletonHandler)
     end
 
+    for key, value in singletonHandler:GetInternals() do
+        self[key] = value
+    end
+
     singletonHandler:LoadSingletons({
         PassthroughDict = self:GetDefaultPassDict(),
         Script = script,
@@ -163,10 +167,6 @@ function masterModule:LoadSingletons()
         SharedFuncsHandler = self.SharedFuncsHandler,
         Loadmap = self:GetLoadMap()
     })
-
-    for key, value in singletonHandler:GetInternals() do
-        self[key] = value
-    end
 end
 
 function masterModule:CleanUpInternalsMaster()
